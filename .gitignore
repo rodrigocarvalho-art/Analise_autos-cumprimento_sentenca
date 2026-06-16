@@ -1,0 +1,10 @@
+# Nunca enviar segredos para o GitHub
+.streamlit/secrets.toml
+.env
+service_account.json
+
+# Lixo do Python
+__pycache__/
+*.pyc
+.venv/
+venv/
