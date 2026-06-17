@@ -198,16 +198,22 @@ if st.button("Analisar", type="primary", disabled=not texto_para_analise):
     if truncado:
         texto_para_analise = texto_para_analise[-MAX_CHARS:]
 
+    qtd = len(texto_para_analise)
+    st.caption(f"Trecho enviado à IA: ~{qtd:,} caracteres (≈ {qtd // 4:,} tokens estimados).")
+
     with st.spinner("Analisando…"):
         try:
             r = analisar(texto_para_analise)
         except Exception as e:
             msg = str(e)
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                st.error("Limite de uso atingido (cota do Gemini). Tente um trecho menor "
-                         "(começar de uma página mais à frente) ou aguarde um pouco.")
+                st.error("Limite de uso atingido (cota do Gemini). Pode ser o tamanho do "
+                         "trecho OU o limite diário do nível gratuito (esgotado por vários "
+                         "testes). Veja o detalhe abaixo.")
             else:
-                st.error(f"Não foi possível concluir a análise: {msg}")
+                st.error("Não foi possível concluir a análise. Veja o detalhe abaixo.")
+            with st.expander("Detalhes técnicos do erro"):
+                st.code(msg)
             st.stop()
 
     if truncado:
