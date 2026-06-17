@@ -15,7 +15,8 @@ arquivo e mostra o resultado. Quem decide o que registrar é a pessoa.
 
 1. **Abra o link** da ferramenta (se houver senha, digite-a).
 2. **Clique em "Browse files"** e escolha o PDF dos autos. Pode selecionar mais de um arquivo, se os autos vierem divididos.
-3. **Clique em "Analisar"** e aguarde. Processos grandes podem levar alguns minutos — é normal, pode deixar a aba aberta.
+3. **Confira o recorte:** o app detecta sozinho onde começa a fase pós-sentença e mostra a página. Se errar, é só ajustar o número em *"Analisar a partir da página"* (ou marcar *"Analisar o documento inteiro"*).
+4. **Clique em "Analisar"** e aguarde. Processos grandes podem levar alguns minutos — é normal, pode deixar a aba aberta.
 4. **Leia o resultado** que aparece: a situação atual, o próximo passo sugerido e o nível de confiança da IA (🟢 alta, 🟡 média, 🔴 baixa).
 5. Se quiser entender o porquê, abra **"Por que a IA sugeriu isso?"**.
 6. No bloco **"Para colar na planilha"**, use o **botãozinho de copiar** (no canto do bloco) e cole o texto na coluna *Próximo passo* da sua planilha.
@@ -34,7 +35,7 @@ Enviar os autos inteiros funciona, mas às vezes o excesso de páginas antigas
 ## 🛠️ Para quem vai instalar e publicar
 
 ### O que você precisa
-- Uma **chave do Google AI Studio** (gratuita): https://aistudio.google.com/apikey
+- Uma **chave do Google AI Studio** (https://aistudio.google.com/apikey) — tem **nível gratuito**.
 - Uma conta no **GitHub** e outra no **Streamlit Community Cloud** (ambas gratuitas) — só na hora de publicar.
 
 ### Testar no seu computador (opcional)
@@ -73,7 +74,7 @@ vá parar no GitHub por acidente. Não remova essa proteção.
 
 ## ⚠️ Observações honestas
 - **Privacidade:** são autos sigilosos. Use a senha (`APP_PASSWORD`) e evite
-  deixar o link totalmente aberto. Os arquivos enviados são apagados do Gemini
+  deixar o link totalmente aberto. O texto é enviado ao Google (Gemini) apenas para a análise.
   após a análise.
 - **A IA erra às vezes:** por isso o nível de confiança fica visível e a revisão
   humana é parte do processo, não um detalhe.
