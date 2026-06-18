@@ -95,19 +95,42 @@ PADRAO_SENTENCA = re.compile(
 )
 
 
+# marcos que só aparecem no CORPO da sentença (não numa página de índice/sumário)
+PADRAO_SENTENCA_FORTE = re.compile(
+    r"(julgo\s+(parcial(mente)?\s+)?(proceden|improceden)"
+    r"|\bhomologo\b"
+    r"|publique[-\s]*se[,.\s]+registre[-\s]*se"
+    r"|\bp\s*\.?\s*r\s*\.?\s*i\b)",
+    re.IGNORECASE,
+)
+
+
+def _eh_indice(t: str) -> bool:
+    """Heurística simples: a página é o índice/sumário do próprio documento."""
+    cabeca = (t or "")[:600].lower()
+    return any(p in cabeca for p in ("índice", "indice", "sumário", "sumario"))
+
+
 def detectar_inicio(textos, toc):
     total = len(textos)
-    # 1) marcadores do índice: procura a SENTENÇA, ignorando a capa/autuação (pág. 1) — que em
-    #    casos de "Cumprimento de Sentença" costuma ter exatamente esse título logo no início.
+    # 1) marcadores embutidos do PDF (índice clicável), ignorando a capa (pág. 1)
     if toc:
         paginas = [pg for (_lvl, titulo, pg) in toc
                    if re.search(r"senten|tr[âa]nsito\s+em\s+julgado", titulo or "", re.IGNORECASE)
                    and pg > 1]
         if paginas:
             return max(0, min(paginas) - 1), "marcadores do PDF (índice)"
-    # 2) fallback no texto, também ignorando a 1ª página (capa)
+    # 2) corpo da sentença: marcos fortes que NÃO aparecem numa página de índice/sumário
+    for i in range(total):
+        if _eh_indice(textos[i]):
+            continue
+        if PADRAO_SENTENCA_FORTE.search(textos[i] or ""):
+            return i, "conteúdo da sentença no texto"
+    # 3) fallback fraco (palavras-título), pulando a capa e as páginas de índice/sumário
     inicio = 1 if total > 1 else 0
     for i in range(inicio, total):
+        if _eh_indice(textos[i]):
+            continue
         if PADRAO_SENTENCA.search(textos[i] or ""):
             return i, "marcos da sentença no texto"
     return None, None
