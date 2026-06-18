@@ -1,17 +1,17 @@
 """
-Análise de autos — sugestão de próximo passo (Streamlit + Gemini)
------------------------------------------------------------------
+Análise de autos — sugestão de próximo passo (Streamlit + Together.ai)
+---------------------------------------------------------------------
 Foco: acompanhamento da fase PÓS-SENTENÇA.
 
-Em vez de enviar o PDF inteiro, o app:
-  1) extrai o texto por página (PyMuPDF);
-  2) recorta a fase pós-sentença usando os marcadores embutidos do PDF
-     (a "indexação") e, na falta deles, marcos da sentença no texto;
+Fluxo:
+  1) extrai o texto por página do PDF (PyMuPDF);
+  2) recorta a fase pós-sentença pelos marcadores embutidos do PDF (a "indexação")
+     e, na falta deles, por marcos da sentença no texto;
   3) mostra a página detectada e deixa o usuário CORRIGIR (transparência);
-  4) envia só esse trecho ao Gemini.
+  4) envia só esse trecho a um modelo da Together.ai (API compatível com OpenAI).
 
-Isso melhora o foco da análise e reduz muito o tamanho — cabendo no nível
-gratuito do Gemini (evita o erro de cota / 429).
+Modelos de texto da Together NÃO leem PDF diretamente — por isso extraímos o
+texto aqui. Como os autos são "na maior parte texto", isso cobre o essencial.
 
 NÃO lê nem grava planilha. Segredos: .streamlit/secrets.toml ou painel "Secrets".
 """
@@ -22,10 +22,11 @@ import json
 
 import streamlit as st
 import fitz  # PyMuPDF
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
 st.set_page_config(page_title="Análise de autos", page_icon="⚖️", layout="centered")
+
+TOGETHER_BASE_URL = "https://api.together.xyz/v1"
 
 
 # ------------------------------------------------------------------ config
@@ -38,10 +39,12 @@ def cfg(nome, padrao=None):
     return os.environ.get(nome, padrao)
 
 
-GEMINI_API_KEY = cfg("GEMINI_API_KEY")
+TOGETHER_API_KEY = cfg("TOGETHER_API_KEY")
 APP_PASSWORD = cfg("APP_PASSWORD")
-MODEL = cfg("GEMINI_MODEL", "gemini-2.0-flash")
-MAX_CHARS = int(cfg("MAX_CHARS", "400000"))   # rede de seguranca p/ o tier gratuito
+# Confirme o ID exato no painel da Together (o catálogo muda).
+# Alternativa forte: "Qwen/Qwen2.5-72B-Instruct-Turbo".
+MODEL = cfg("TOGETHER_MODEL", "meta-llama/Llama-3.3-70B-Instruct-Turbo")
+MAX_CHARS = int(cfg("MAX_CHARS", "300000"))   # rede de seguranca p/ o contexto do modelo
 
 
 # ------------------------------------------------------------------ login opcional
@@ -64,24 +67,22 @@ def liberar_acesso() -> bool:
 if not liberar_acesso():
     st.stop()
 
-if not GEMINI_API_KEY:
-    st.error("A chave do Gemini não está configurada. Defina GEMINI_API_KEY nos *Secrets*.")
+if not TOGETHER_API_KEY:
+    st.error("A chave da Together não está configurada. Defina TOGETHER_API_KEY nos *Secrets*.")
     st.stop()
 
-cliente = genai.Client(api_key=GEMINI_API_KEY)
+cliente = OpenAI(api_key=TOGETHER_API_KEY, base_url=TOGETHER_BASE_URL)
 
 
 # ------------------------------------------------------------------ leitura e recorte do PDF
 @st.cache_data(show_spinner=False)
 def carregar_pdf(_nome: str, dados: bytes):
-    """Retorna (lista de textos por pagina, indice/TOC do PDF)."""
     with fitz.open(stream=dados, filetype="pdf") as d:
         textos = [p.get_text() for p in d]
         toc = d.get_toc(simple=True)  # [[nivel, titulo, pagina_1based], ...]
     return textos, toc
 
 
-# marcos que indicam a sentenca / inicio da fase pos-sentenca
 PADRAO_SENTENCA = re.compile(
     r"(julgo\s+(parcial(mente)?\s+)?(proceden|improceden)"
     r"|cumprimento\s+de\s+senten"
@@ -92,21 +93,18 @@ PADRAO_SENTENCA = re.compile(
 
 
 def detectar_inicio(textos, toc):
-    """Devolve (indice_0based_da_pagina_inicial, motivo) ou (None, None)."""
-    # 1) marcadores embutidos (mais confiavel)
     if toc:
         paginas = [pg for (_lvl, titulo, pg) in toc
                    if re.search(r"senten|cumprimento", titulo or "", re.IGNORECASE)]
         if paginas:
             return max(0, min(paginas) - 1), "marcadores do PDF (índice)"
-    # 2) busca por marcos no texto
     for i, t in enumerate(textos):
         if PADRAO_SENTENCA.search(t or ""):
             return i, "marcos da sentença no texto"
     return None, None
 
 
-# ------------------------------------------------------------------ IA
+# ------------------------------------------------------------------ IA (Together.ai)
 SISTEMA = (
     "Voce e um assistente juridico especializado em processo civil brasileiro, com foco "
     "na fase de cumprimento de sentenca e execucao. Recebera o TEXTO da fase POS-SENTENCA "
@@ -115,8 +113,8 @@ SISTEMA = (
     "processual mais provavel a ser adotado pela parte, como SUGESTAO a ser revisada por "
     "um advogado; (3) atribuir confianca (alta/media/baixa). Nao invente fatos que nao "
     "estejam no texto. Se o texto for insuficiente, diga isso e use confianca baixa. "
-    "Responda SOMENTE com JSON valido, sem comentarios nem cercas de codigo, com as chaves: "
-    "situacao_atual, proximo_passo, confianca, justificativa."
+    "Responda APENAS com um objeto JSON valido, sem nenhum texto fora dele e sem cercas de "
+    "codigo, com exatamente as chaves: situacao_atual, proximo_passo, confianca, justificativa."
 )
 
 
@@ -136,14 +134,16 @@ def _parse_json(texto: str) -> dict:
 
 
 def analisar(texto_pos_sentenca: str) -> dict:
-    resp = cliente.models.generate_content(
+    prompt = ("=== TEXTO (fase pós-sentença) ===\n" + texto_pos_sentenca +
+              "\n\nResponda apenas com o JSON pedido.")
+    resp = cliente.chat.completions.create(
         model=MODEL,
-        contents=["=== TEXTO (fase pós-sentença) ===\n" + texto_pos_sentenca],
-        config=types.GenerateContentConfig(
-            system_instruction=SISTEMA, temperature=0.2, response_mime_type="application/json"
-        ),
+        messages=[{"role": "system", "content": SISTEMA},
+                  {"role": "user", "content": prompt}],
+        temperature=0.2,
+        max_tokens=1024,
     )
-    return _parse_json(resp.text)
+    return _parse_json(resp.choices[0].message.content)
 
 
 # ------------------------------------------------------------------ interface
@@ -206,10 +206,11 @@ if st.button("Analisar", type="primary", disabled=not texto_para_analise):
             r = analisar(texto_para_analise)
         except Exception as e:
             msg = str(e)
-            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                st.error("Limite de uso atingido (cota do Gemini). Pode ser o tamanho do "
-                         "trecho OU o limite diário do nível gratuito (esgotado por vários "
-                         "testes). Veja o detalhe abaixo.")
+            if "429" in msg or "rate" in msg.lower() or "quota" in msg.lower():
+                st.error("Limite de uso atingido. Aguarde um instante e tente de novo, "
+                         "ou reduza o trecho (começar de uma página mais à frente).")
+            elif "model" in msg.lower() and ("not" in msg.lower() or "invalid" in msg.lower()):
+                st.error("Modelo não reconhecido. Confira o ID em TOGETHER_MODEL no painel da Together.")
             else:
                 st.error("Não foi possível concluir a análise. Veja o detalhe abaixo.")
             with st.expander("Detalhes técnicos do erro"):

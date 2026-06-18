@@ -35,7 +35,7 @@ Enviar os autos inteiros funciona, mas às vezes o excesso de páginas antigas
 ## 🛠️ Para quem vai instalar e publicar
 
 ### O que você precisa
-- Uma **chave do Google AI Studio** (https://aistudio.google.com/apikey) — tem **nível gratuito**.
+- Uma **chave da Together.ai** (https://api.together.ai/settings/api-keys) — paga por uso (modelos abertos costumam ser baratos; contas novas às vezes vêm com créditos).
 - Uma conta no **GitHub** e outra no **Streamlit Community Cloud** (ambas gratuitas) — só na hora de publicar.
 
 ### Testar no seu computador (opcional)
@@ -54,11 +54,11 @@ O caminho recomendado é GitHub + Streamlit Community Cloud (faremos o passo a
 passo juntos quando você quiser). Em resumo:
 1. Suba esta pasta para um repositório no GitHub.
 2. No Streamlit Community Cloud, conecte o repositório e aponte para o arquivo `streamlit_app.py`.
-3. No painel **Secrets** do app, cole a `GEMINI_API_KEY` (e a `APP_PASSWORD`, se quiser senha).
+3. No painel **Secrets** do app, cole a `TOGETHER_API_KEY` (e a `APP_PASSWORD`, se quiser senha).
 4. O Streamlit publica e te entrega o link.
 
 ### Sobre os segredos (leia isto)
-A chave do Gemini e a senha **nunca** ficam escritas no código. Elas vão:
+A chave da Together e a senha **nunca** ficam escritas no código. Elas vão:
 - no arquivo `.streamlit/secrets.toml` (no seu computador), **ou**
 - no painel *Secrets* (no Streamlit Cloud).
 
@@ -68,16 +68,16 @@ vá parar no GitHub por acidente. Não remova essa proteção.
 ### Ajustes rápidos (sem saber programar)
 - **Colocar/ tirar senha:** defina (ou apague) `APP_PASSWORD` nos secrets.
 - **Tamanho máximo de upload:** está em `.streamlit/config.toml` (`maxUploadSize`, em MB).
-- **Trocar o modelo da IA:** defina `GEMINI_MODEL` nos secrets.
+- **Trocar o modelo da IA:** defina `TOGETHER_MODEL` nos secrets.
 
 ---
 
 ## ⚠️ Observações honestas
 - **Privacidade:** são autos sigilosos. Use a senha (`APP_PASSWORD`) e evite
-  deixar o link totalmente aberto. O texto é enviado ao Google (Gemini) apenas para a análise.
+  deixar o link totalmente aberto. O texto é enviado à Together.ai apenas para a análise.
   após a análise.
 - **A IA erra às vezes:** por isso o nível de confiança fica visível e a revisão
   humana é parte do processo, não um detalhe.
-- **Tecnologias mudam:** nomes de modelo do Gemini e detalhes da biblioteca
+- **Tecnologias mudam:** nomes de modelo da Together e detalhes da biblioteca
   podem mudar; se algo parar de funcionar, normalmente é só atualizar o
-  `GEMINI_MODEL` ou as dependências.
+  `TOGETHER_MODEL` ou as dependências.
