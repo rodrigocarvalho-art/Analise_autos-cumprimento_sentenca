@@ -96,13 +96,19 @@ PADRAO_SENTENCA = re.compile(
 
 
 def detectar_inicio(textos, toc):
+    total = len(textos)
+    # 1) marcadores do índice: procura a SENTENÇA, ignorando a capa/autuação (pág. 1) — que em
+    #    casos de "Cumprimento de Sentença" costuma ter exatamente esse título logo no início.
     if toc:
         paginas = [pg for (_lvl, titulo, pg) in toc
-                   if re.search(r"senten|cumprimento", titulo or "", re.IGNORECASE)]
+                   if re.search(r"senten|tr[âa]nsito\s+em\s+julgado", titulo or "", re.IGNORECASE)
+                   and pg > 1]
         if paginas:
             return max(0, min(paginas) - 1), "marcadores do PDF (índice)"
-    for i, t in enumerate(textos):
-        if PADRAO_SENTENCA.search(t or ""):
+    # 2) fallback no texto, também ignorando a 1ª página (capa)
+    inicio = 1 if total > 1 else 0
+    for i in range(inicio, total):
+        if PADRAO_SENTENCA.search(textos[i] or ""):
             return i, "marcos da sentença no texto"
     return None, None
 
