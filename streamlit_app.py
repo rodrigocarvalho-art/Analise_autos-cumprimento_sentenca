@@ -19,6 +19,7 @@ NÃO lê nem grava planilha. Segredos: .streamlit/secrets.toml ou painel "Secret
 import os
 import re
 import json
+from datetime import datetime
 
 import streamlit as st
 import fitz  # PyMuPDF
@@ -45,6 +46,8 @@ APP_PASSWORD = cfg("APP_PASSWORD")
 # Alternativa forte: "Qwen/Qwen2.5-72B-Instruct-Turbo".
 MODEL = cfg("TOGETHER_MODEL", "meta-llama/Llama-3.3-70B-Instruct-Turbo")
 MAX_CHARS = int(cfg("MAX_CHARS", "300000"))   # rede de seguranca p/ o contexto do modelo
+ESCRITORIO = cfg("ESCRITORIO", "Matheus Carvalho")   # usado para definir "de quem é a próxima ação"
+DATA_HOJE = datetime.now().strftime("%d/%m/%Y")
 
 
 # ------------------------------------------------------------------ login opcional
@@ -115,16 +118,33 @@ def extrair_numero(texto_completo: str) -> str:
 
 # ------------------------------------------------------------------ IA (Together.ai)
 SISTEMA = (
-    "Voce e um assistente juridico especializado em processo civil brasileiro, com foco "
-    "na fase de cumprimento de sentenca e execucao. Recebera o TEXTO da fase POS-SENTENCA "
-    "de um processo (ja recortado). Tarefas: (1) resumir a SITUACAO ATUAL em uma frase "
-    "objetiva, baseada nas pecas/decisoes mais recentes; (2) indicar o PROXIMO PASSO "
-    "processual mais provavel a ser adotado pela parte, como SUGESTAO a ser revisada por "
-    "um advogado; (3) atribuir confianca (alta/media/baixa). Nao invente fatos que nao "
-    "estejam no texto. Se o texto for insuficiente, diga isso e use confianca baixa. "
-    "Responda APENAS com um objeto JSON valido, sem nenhum texto fora dele e sem cercas de "
-    "codigo, com exatamente as chaves: situacao_atual, proximo_passo, confianca, justificativa."
-)
+    "Voce e um assistente juridico especializado em processo civil brasileiro, fase de "
+    "cumprimento de sentenca e execucao. Recebera o TEXTO da fase pos-sentenca de um processo "
+    "(ja recortado) e a DATA DE HOJE. O escritorio que faz a consulta e: \"{ESCRITORIO}\".\n\n"
+    "Primeiro, identifique no texto qual parte o escritorio \"{ESCRITORIO}\" representa "
+    "(verifique procuracoes, peticoes assinadas, OAB) e em qual polo (exequente/ativo ou "
+    "executado/passivo).\n\n"
+    "Depois produza a analise com EXATAMENTE estas chaves em um objeto JSON valido "
+    "(sem texto fora dele, sem cercas de codigo):\n"
+    "- situacao_atual: em que pe esta o andamento pos-sentenca, 1-2 frases objetivas, com base nas "
+    "movimentacoes mais recentes.\n"
+    "- parte_representada: qual parte/polo o escritorio representa, ou \"indefinido\".\n"
+    "- responsavel_proxima_acao: de quem e a proxima acao. Use exatamente um destes valores: "
+    "\"nosso escritorio\", \"parte contraria\", \"juizo/cartorio\" ou \"indefinido\".\n"
+    "- proximo_passo: a proxima acao processual mais provavel, como SUGESTAO para revisao de "
+    "advogado; se for do nosso escritorio, seja concreto sobre a peticao/medida.\n"
+    "- data_ultima_movimentacao: data da ultima movimentacao relevante (DD/MM/AAAA) ou \"indefinido\".\n"
+    "- tempo_parado: ha quanto tempo o processo esta sem movimentacao util, calculado em relacao a "
+    "DATA DE HOJE (ex.: \"cerca de 4 meses\"); se houver movimentacao recente, diga isso.\n"
+    "- provocacao_juizo: avalie se cabe provocar o juizo pela demora/inercia (ex.: peticao de impulso "
+    "oficial, reiteracao de pedido pendente, pedido de prioridade) e qual peticao; ou \"nao se aplica\" "
+    "se a inercia nao for do juizo.\n"
+    "- valor_da_causa: o valor da causa indicado nos autos (ex.: \"R$ 50.000,00\") ou \"nao localizado\".\n"
+    "- confianca: alta/media/baixa.\n"
+    "- justificativa: cite brevemente as pecas/decisoes em que se baseou.\n\n"
+    "Nao invente fatos que nao estejam no texto. Se algo nao constar, use \"indefinido\"/\"nao "
+    "localizado\" e reduza a confianca."
+).replace("{ESCRITORIO}", ESCRITORIO)
 
 
 def _parse_json(texto: str) -> dict:
@@ -143,7 +163,8 @@ def _parse_json(texto: str) -> dict:
 
 
 def analisar(texto_pos_sentenca: str) -> dict:
-    prompt = ("=== TEXTO (fase pós-sentença) ===\n" + texto_pos_sentenca +
+    prompt = (f"DATA DE HOJE: {DATA_HOJE}\n\n"
+              "=== TEXTO (fase pós-sentença) ===\n" + texto_pos_sentenca +
               "\n\nResponda apenas com o JSON pedido.")
     resp = cliente.chat.completions.create(
         model=MODEL,
@@ -153,6 +174,17 @@ def analisar(texto_pos_sentenca: str) -> dict:
         max_tokens=1024,
     )
     return _parse_json(resp.choices[0].message.content)
+
+
+def rotulo_responsavel(resp: str) -> str:
+    r = (resp or "").lower()
+    if "escrit" in r or "nosso" in r:
+        return "🟠 nosso escritório"
+    if "contr" in r:
+        return "🔵 parte contrária"
+    if "ju" in r or "cart" in r:
+        return "🟣 juízo/cartório"
+    return "⚪ indefinido"
 
 
 # ------------------------------------------------------------------ interface
@@ -246,14 +278,33 @@ if st.button("Analisar", type="primary", disabled=not texto_para_analise):
     st.divider()
     if numero_processo.strip():
         st.markdown(f"**Processo Nº:** {numero_processo.strip()}")
+
     st.markdown("#### Situação atual")
     st.write(r.get("situacao_atual", "—"))
+
+    st.markdown(f"**Próxima ação é de:** {rotulo_responsavel(r.get('responsavel_proxima_acao'))}")
+    if r.get("parte_representada"):
+        st.caption(f"Representamos: {r['parte_representada']}")
+
     st.markdown("#### Próximo passo (sugestão)")
     st.write(r.get("proximo_passo", "—"))
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"**Há quanto tempo parado:** {r.get('tempo_parado', '—')}")
+        if r.get("data_ultima_movimentacao"):
+            st.caption(f"Última movimentação: {r['data_ultima_movimentacao']}")
+    with col2:
+        st.markdown(f"**Valor da causa:** {r.get('valor_da_causa', '—')}")
+
+    st.markdown("#### Cabe provocar o juízo?")
+    st.write(r.get("provocacao_juizo", "—"))
+
     st.markdown(f"**Confiança:** {selo}")
     if r.get("justificativa"):
         with st.expander("Por que a IA sugeriu isso?"):
             st.write(r["justificativa"])
+
     st.markdown("#### Para colar na planilha")
     st.caption("Use o botão de copiar no canto do bloco abaixo.")
     st.code(r.get("proximo_passo", ""), language=None)
