@@ -104,6 +104,15 @@ def detectar_inicio(textos, toc):
     return None, None
 
 
+# numero unico CNJ: NNNNNNN-DD.AAAA.J.TR.OOOO
+RE_CNJ = re.compile(r"\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}")
+
+
+def extrair_numero(texto_completo: str) -> str:
+    m = RE_CNJ.search(texto_completo or "")
+    return m.group(0) if m else ""
+
+
 # ------------------------------------------------------------------ IA (Together.ai)
 SISTEMA = (
     "Voce e um assistente juridico especializado em processo civil brasileiro, com foco "
@@ -154,11 +163,14 @@ st.caption("Envie o(s) PDF(s). O app recorta a fase pós-sentença e a IA sugere
 arquivos = st.file_uploader("Autos em PDF", type=["pdf"], accept_multiple_files=True)
 
 texto_para_analise = None
+numero_processo = ""
 
 if arquivos:
+    texto_completo = ""
     if len(arquivos) == 1:
         uf = arquivos[0]
         textos, toc = carregar_pdf(uf.name, uf.getvalue())
+        texto_completo = "\n".join(textos)
         total = len(textos)
         start, motivo = detectar_inicio(textos, toc)
 
@@ -181,14 +193,22 @@ if arquivos:
             st.caption(f"Serão analisadas as páginas {pini}–{total} "
                        f"({total - pini + 1} de {total}).")
     else:
-        partes = []
+        partes, completos = [], []
         for uf in arquivos:
             textos, toc = carregar_pdf(uf.name, uf.getvalue())
+            completos.append("\n".join(textos))
             start, _ = detectar_inicio(textos, toc)
             s = start if start is not None else 0
             partes.append(f"[{uf.name}]\n" + "\n".join(textos[s:]))
         texto_para_analise = "\n\n".join(partes)
+        texto_completo = "\n".join(completos)
         st.caption("Vários arquivos: apliquei o recorte pós-sentença automaticamente em cada um.")
+
+    numero_processo = st.text_input(
+        "Número do processo",
+        value=extrair_numero(texto_completo),
+        placeholder="Não identificado — preencha se quiser",
+    )
 
 if st.button("Analisar", type="primary", disabled=not texto_para_analise):
     if len(texto_para_analise.strip()) < 200:
@@ -224,6 +244,8 @@ if st.button("Analisar", type="primary", disabled=not texto_para_analise):
     selo = {"alta": "🟢 alta", "media": "🟡 média", "baixa": "🔴 baixa"}.get(conf, "⚪ —")
 
     st.divider()
+    if numero_processo.strip():
+        st.markdown(f"**Processo Nº:** {numero_processo.strip()}")
     st.markdown("#### Situação atual")
     st.write(r.get("situacao_atual", "—"))
     st.markdown("#### Próximo passo (sugestão)")
