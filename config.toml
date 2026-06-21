@@ -1,0 +1,11 @@
+[server]
+# Aumenta o limite de upload (padrão é 200MB). Autos grandes/escaneados podem passar disso.
+maxUploadSize = 1024
+
+[theme]
+# Paleta papel/tinta para o app não ficar "todo cinza"
+primaryColor = "#2f4156"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f4f1ea"
+textColor = "#1c2530"
+font = "serif"

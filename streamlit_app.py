@@ -20,6 +20,7 @@ import os
 import re
 import json
 from datetime import datetime
+import html as _html
 
 import streamlit as st
 import fitz  # PyMuPDF
@@ -167,7 +168,10 @@ SISTEMA = (
     "prioridade se cabivel); (c) se ja cabe a nos uma providencia concreta (ex.: requerer multa, "
     "penhora, Sisbajud), descreva-a objetivamente.\n"
     "- data_ultima_movimentacao: data da ultima movimentacao relevante (DD/MM/AAAA) ou \"indefinido\".\n"
-    "- valor_da_causa: o valor da causa indicado nos autos (ex.: \"R$ 50.000,00\") ou \"nao localizado\".\n"
+    "- valor_execucao: o valor que o NOSSO escritorio busca receber NESTA fase de cumprimento "
+    "(em regra, o principal nao pago acrescido da multa do art. 523 e dos honorarios), conforme "
+    "requerido nos autos; ou \"nao localizado\".\n"
+    "- valor_da_causa: o valor da causa originario indicado nos autos; ou \"nao localizado\".\n"
     "- confianca: alta/media/baixa.\n"
     "- justificativa: cite brevemente as pecas/decisoes em que se baseou.\n\n"
     "Nao invente fatos que nao estejam no texto. Se algo nao constar, use \"indefinido\"/\"nao "
@@ -204,6 +208,52 @@ def analisar(texto_pos_sentenca: str) -> dict:
     return _parse_json(resp.choices[0].message.content)
 
 
+
+
+
+def card_resultado(numero, r):
+    def esc(x):
+        return _html.escape(str(x) if x not in (None, "") else "—")
+    conf = (r.get("confianca") or "baixa").lower()
+    cores = {"alta": ("#15803d", "#dcfce7"), "media": ("#92740e", "#fef9c3"),
+             "baixa": ("#b91c1c", "#fee2e2")}
+    ctxt, cbg = cores.get(conf, ("#475569", "#e2e8f0"))
+    pill = ('<span style="background:%s;color:%s;padding:3px 12px;border-radius:999px;'
+            'font-size:13px;font-weight:700">%s</span>') % (cbg, ctxt, esc(conf))
+
+    def metric(rotulo, valor):
+        return ('<div style="flex:1;min-width:120px;background:#f4f1ea;border-radius:10px;'
+                'padding:10px 12px"><div style="font-size:11px;letter-spacing:.04em;'
+                'text-transform:uppercase;color:#7a7468;margin-bottom:3px">' + esc(rotulo) +
+                '</div><div style="font-size:15px;color:#1c2530">' + esc(valor) + '</div></div>')
+
+    def label(t):
+        return ('<div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;'
+                'color:#9a6a3a;font-weight:700;margin:0 0 4px">' + t + '</div>')
+
+    def texto(t):
+        return ('<div style="font-size:15.5px;color:#1c2530;line-height:1.6;margin:0 0 16px">'
+                + esc(t) + '</div>')
+
+    cabecalho = ''
+    if (numero or '').strip():
+        cabecalho = ('<div style="font-size:15px;color:#1c2530;margin:0 0 14px">'
+                     '<b>Processo Nº:</b> ' + esc(numero) + '</div>')
+
+    metricas = ('<div style="display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px">'
+                + metric("Valor em execução", r.get("valor_execucao"))
+                + metric("Valor da causa", r.get("valor_da_causa"))
+                + metric("Última movimentação", r.get("data_ultima_movimentacao"))
+                + '</div>')
+
+    return ('<div style="border:1px solid #e6e1d6;border-radius:14px;padding:18px 20px;'
+            'background:#ffffff;font-family:Georgia,serif">'
+            + cabecalho
+            + label("Situação atual") + texto(r.get("situacao_atual"))
+            + label("Próximo passo (sugestão)") + texto(r.get("proximo_passo"))
+            + metricas
+            + '<div style="font-size:15px;color:#1c2530"><b>Confiança:</b> ' + pill + '</div>'
+            + '</div>')
 
 
 # ------------------------------------------------------------------ interface
@@ -291,26 +341,8 @@ if st.button("Analisar", type="primary", disabled=not texto_para_analise):
     if truncado:
         st.caption("⚠️ Trecho ainda muito extenso; analisei a porção final do texto.")
 
-    conf = (r.get("confianca") or "baixa").lower()
-    selo = {"alta": "🟢 alta", "media": "🟡 média", "baixa": "🔴 baixa"}.get(conf, "⚪ —")
-
     st.divider()
-    if numero_processo.strip():
-        st.markdown(f"**Processo Nº:** {numero_processo.strip()}")
-
-    st.markdown("#### Situação atual")
-    st.write(r.get("situacao_atual", "—"))
-
-    st.markdown("#### Próximo passo (sugestão)")
-    st.write(r.get("proximo_passo", "—"))
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"**Última movimentação:** {r.get('data_ultima_movimentacao', '—')}")
-    with col2:
-        st.markdown(f"**Valor da causa:** {r.get('valor_da_causa', '—')}")
-
-    st.markdown(f"**Confiança:** {selo}")
+    st.markdown(card_resultado(numero_processo, r), unsafe_allow_html=True)
     if r.get("justificativa"):
         with st.expander("Por que a IA sugeriu isso?"):
             st.write(r["justificativa"])
