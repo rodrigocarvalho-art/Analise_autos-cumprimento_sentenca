@@ -46,7 +46,8 @@ APP_PASSWORD = cfg("APP_PASSWORD")
 # Alternativa forte: "Qwen/Qwen2.5-72B-Instruct-Turbo".
 MODEL = cfg("TOGETHER_MODEL", "meta-llama/Llama-3.3-70B-Instruct-Turbo")
 MAX_CHARS = int(cfg("MAX_CHARS", "300000"))   # rede de seguranca p/ o contexto do modelo
-ESCRITORIO = cfg("ESCRITORIO", "Matheus Carvalho")   # usado para definir "de quem é a próxima ação"
+ESCRITORIO = cfg("ESCRITORIO", "Matheus Carvalho")   # usado para enquadrar o "próximo passo" como ação nossa
+DIAS_PARADO_PROVOCAR = int(cfg("DIAS_PARADO_PROVOCAR", "60"))  # concluso/parado além disso => sugerir provocar o juízo
 DATA_HOJE = datetime.now().strftime("%d/%m/%Y")
 
 
@@ -150,36 +151,28 @@ SISTEMA = (
     "Voce e um assistente juridico especializado em processo civil brasileiro, fase de "
     "cumprimento de sentenca e execucao. Recebera o TEXTO da fase pos-sentenca de um processo "
     "(ja recortado) e a DATA DE HOJE. O escritorio que faz a consulta e: \"{ESCRITORIO}\".\n\n"
-    "Primeiro, identifique no texto qual parte o escritorio \"{ESCRITORIO}\" representa "
-    "(verifique procuracoes, peticoes assinadas, OAB) e em qual polo (exequente/ativo ou "
-    "executado/passivo).\n\n"
-    "Depois produza a analise com EXATAMENTE estas chaves em um objeto JSON valido "
-    "(sem texto fora dele, sem cercas de codigo):\n"
+    "Identifique no texto qual parte o escritorio \"{ESCRITORIO}\" representa (procuracoes, "
+    "peticoes assinadas, OAB) e em qual polo. TODO o proximo_passo deve ser escrito do ponto de "
+    "vista do NOSSO escritorio: o que NOS devemos fazer em seguida.\n\n"
+    "Produza um objeto JSON valido (sem texto fora dele e sem cercas de codigo) com EXATAMENTE "
+    "estas chaves:\n"
     "- situacao_atual: em que pe esta o andamento pos-sentenca, 1-2 frases objetivas, com base nas "
     "movimentacoes mais recentes.\n"
     "- parte_representada: qual parte/polo o escritorio representa, ou \"indefinido\".\n"
-    "- responsavel_proxima_acao: de quem se espera o PROXIMO ato util no estado ATUAL do "
-    "processo. Use exatamente um destes valores: \"nosso escritorio\", \"parte contraria\", "
-    "\"juizo/cartorio\" ou \"indefinido\". Regras: se ha prazo em curso da parte contraria "
-    "(ex.: prazo para pagamento ou impugnacao), o responsavel e \"parte contraria\"; se o "
-    "processo aguarda decisao do juiz ou ato do cartorio, e \"juizo/cartorio\"; use \"nosso "
-    "escritorio\" SOMENTE quando houver uma providencia concreta a tomar AGORA. Se a ultima "
-    "movimentacao foi do proprio escritorio, em regra a proxima acao NAO e nossa. Este campo "
-    "deve ser COERENTE com o proximo_passo.\n"
-    "- proximo_passo: a proxima acao processual mais provavel, como SUGESTAO para revisao de "
-    "advogado; se for do nosso escritorio, seja concreto sobre a peticao/medida.\n"
+    "- proximo_passo: a proxima acao a ser tomada PELO NOSSO ESCRITORIO, como SUGESTAO para revisao "
+    "de advogado. Considere o estado atual: (a) se ha prazo da parte contraria em curso (ex.: "
+    "pagamento/impugnacao), o passo e aguardar e acompanhar o decurso do prazo; (b) se o processo "
+    "esta concluso/aguardando decisao ou ato do juizo ha MAIS de {DIAS} dias em relacao a DATA DE "
+    "HOJE, o passo e PROVOCAR O JUIZO (peticionar cobrando a decisao/o andamento, com pedido de "
+    "prioridade se cabivel); (c) se ja cabe a nos uma providencia concreta (ex.: requerer multa, "
+    "penhora, Sisbajud), descreva-a objetivamente.\n"
     "- data_ultima_movimentacao: data da ultima movimentacao relevante (DD/MM/AAAA) ou \"indefinido\".\n"
-    "- tempo_parado: ha quanto tempo o processo esta sem movimentacao util, calculado em relacao a "
-    "DATA DE HOJE (ex.: \"cerca de 4 meses\"); se houver movimentacao recente, diga isso.\n"
-    "- provocacao_juizo: avalie se cabe provocar o juizo pela demora/inercia (ex.: peticao de impulso "
-    "oficial, reiteracao de pedido pendente, pedido de prioridade) e qual peticao; ou \"nao se aplica\" "
-    "se a inercia nao for do juizo.\n"
     "- valor_da_causa: o valor da causa indicado nos autos (ex.: \"R$ 50.000,00\") ou \"nao localizado\".\n"
     "- confianca: alta/media/baixa.\n"
     "- justificativa: cite brevemente as pecas/decisoes em que se baseou.\n\n"
     "Nao invente fatos que nao estejam no texto. Se algo nao constar, use \"indefinido\"/\"nao "
     "localizado\" e reduza a confianca."
-).replace("{ESCRITORIO}", ESCRITORIO)
+).replace("{ESCRITORIO}", ESCRITORIO).replace("{DIAS}", str(DIAS_PARADO_PROVOCAR))
 
 
 def _parse_json(texto: str) -> dict:
@@ -211,15 +204,6 @@ def analisar(texto_pos_sentenca: str) -> dict:
     return _parse_json(resp.choices[0].message.content)
 
 
-def rotulo_responsavel(resp: str) -> str:
-    r = (resp or "").lower()
-    if "escrit" in r or "nosso" in r:
-        return "🟠 nosso escritório"
-    if "contr" in r:
-        return "🔵 parte contrária"
-    if "ju" in r or "cart" in r:
-        return "🟣 juízo/cartório"
-    return "⚪ indefinido"
 
 
 # ------------------------------------------------------------------ interface
@@ -317,23 +301,14 @@ if st.button("Analisar", type="primary", disabled=not texto_para_analise):
     st.markdown("#### Situação atual")
     st.write(r.get("situacao_atual", "—"))
 
-    st.markdown(f"**Próxima ação é de:** {rotulo_responsavel(r.get('responsavel_proxima_acao'))}")
-    if r.get("parte_representada"):
-        st.caption(f"Representamos: {r['parte_representada']}")
-
     st.markdown("#### Próximo passo (sugestão)")
     st.write(r.get("proximo_passo", "—"))
 
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown(f"**Há quanto tempo parado:** {r.get('tempo_parado', '—')}")
-        if r.get("data_ultima_movimentacao"):
-            st.caption(f"Última movimentação: {r['data_ultima_movimentacao']}")
+        st.markdown(f"**Última movimentação:** {r.get('data_ultima_movimentacao', '—')}")
     with col2:
         st.markdown(f"**Valor da causa:** {r.get('valor_da_causa', '—')}")
-
-    st.markdown("#### Cabe provocar o juízo?")
-    st.write(r.get("provocacao_juizo", "—"))
 
     st.markdown(f"**Confiança:** {selo}")
     if r.get("justificativa"):
