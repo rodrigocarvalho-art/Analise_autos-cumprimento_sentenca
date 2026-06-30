@@ -159,7 +159,8 @@ SISTEMA = (
     "Produza um objeto JSON valido (sem texto fora dele e sem cercas de codigo) com EXATAMENTE "
     "estas chaves:\n"
     "- situacao_atual: em que pe esta o andamento pos-sentenca, 1-2 frases objetivas, com base nas "
-    "movimentacoes mais recentes.\n"
+    "movimentacoes mais recentes. NAO cite os nomes das partes; refira-se a elas como autor/exequente "
+    "e reu/executado (ou autora/exequente e re/executada).\n"
     "- parte_representada: qual parte/polo o escritorio representa, ou \"indefinido\".\n"
     "- proximo_passo: a proxima acao a ser tomada PELO NOSSO ESCRITORIO, como SUGESTAO para revisao "
     "de advogado. Considere o estado atual: (a) se ha prazo da parte contraria em curso, o passo e "
@@ -318,14 +319,14 @@ def _resolver_cols(valores, svc):
 
 def montar_observacoes(r):
     partes = []
-    for rotulo, chave in [("Situação", "situacao_atual"), ("Última mov.", "data_ultima_movimentacao"),
+    sit = _limpo(r.get("situacao_atual"))
+    if sit:
+        partes.append(sit)
+    for rotulo, chave in [("Última mov.", "data_ultima_movimentacao"),
                           ("Valor em execução", "valor_execucao"), ("Valor da causa", "valor_da_causa")]:
         v = _limpo(r.get(chave))
         if v:
             partes.append("%s: %s" % (rotulo, v))
-    conf = (r.get("confianca") or "").lower()
-    if conf:
-        partes.append("Confiança IA: " + conf)
     return ("[Análise IA em %s] " % DATA_HOJE) + " | ".join(partes)
 
 
